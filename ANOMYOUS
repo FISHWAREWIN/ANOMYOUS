@@ -1,0 +1,304 @@
+--[[ 
+    Advanced ESP Script (Optimized)
+    Features:
+    - Box ESP
+    - Skeleton ESP
+    - Health Bar
+    - Name ESP
+    - Distance ESP
+    Created by [MCSTEALLIFE]
+]]
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Settings
+local ESP_ENABLED = true
+local BOX_COLOR = Color3.fromRGB(0, 255, 0) -- Box Color
+local SKELETON_COLOR = Color3.fromRGB(255, 0, 0) -- Skeleton Color
+local HEALTH_BAR_COLOR = Color3.fromRGB(0, 255, 0) -- Health Bar Color
+local TEXT_COLOR = Color3.fromRGB(255, 255, 255) -- Name & Distance Color
+
+-- Store ESP objects for each player
+local ESP_Objects = {}
+
+-- Utility Functions
+local function RemoveESP(Player)
+    if ESP_Objects[Player] then
+        -- Remove ESP elements
+        ESP_Objects[Player].Box:Remove()
+        ESP_Objects[Player].HealthBar:Remove()
+        ESP_Objects[Player].Name:Remove()
+        ESP_Objects[Player].Distance:Remove()
+        for _, bone in pairs(ESP_Objects[Player].Skeleton) do
+            bone.Line:Remove()
+        end
+
+        -- Disconnect the RenderStepped connection
+        if ESP_Objects[Player].Connection then
+            ESP_Objects[Player].Connection:Disconnect()
+        end
+
+        -- Remove from table
+        ESP_Objects[Player] = nil
+    end
+end
+
+local function CreateESP(Player)
+    if Player == LocalPlayer then return end  -- Skip local player
+
+    local function SetupCharacter(Character)
+        if not Character or not Character.Parent then return end
+
+        -- Ensure required parts exist
+        local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart", 5)
+        local Humanoid = Character:WaitForChild("Humanoid", 5)
+        if not HumanoidRootPart or not Humanoid then return end
+
+        -- Remove old ESP if it exists
+        RemoveESP(Player)
+
+        -- Create ESP components
+        local ESP_Box = Drawing.new("Square")
+        ESP_Box.Color = BOX_COLOR
+        ESP_Box.Thickness = 2
+        ESP_Box.Transparency = 1
+        ESP_Box.Filled = false
+
+        local Health_Bar = Drawing.new("Line")
+        Health_Bar.Color = HEALTH_BAR_COLOR
+        Health_Bar.Thickness = 3
+        Health_Bar.Transparency = 1
+
+        local Name_Text = Drawing.new("Text")
+        Name_Text.Color = TEXT_COLOR
+        Name_Text.Size = 18
+        Name_Text.Center = true
+        Name_Text.Outline = true
+        Name_Text.Text = Player.Name
+
+        local Distance_Text = Drawing.new("Text")
+        Distance_Text.Color = TEXT_COLOR
+        Distance_Text.Size = 16
+        Distance_Text.Center = true
+        Distance_Text.Outline = true
+
+        -- Skeleton ESP (bones)
+        local Skeleton_Lines = {}
+        local Skeleton_Bones = {
+            {"Head", "UpperTorso"}, {"UpperTorso", "LowerTorso"}, {"UpperTorso", "LeftUpperArm"},
+            {"UpperTorso", "RightUpperArm"}, {"LowerTorso", "LeftUpperLeg"}, {"LowerTorso", "RightUpperLeg"},
+            {"LeftUpperArm", "LeftLowerArm"}, {"RightUpperArm", "RightLowerArm"}, {"LeftLowerArm", "LeftHand"},
+            {"RightLowerArm", "RightHand"}, {"LeftUpperLeg", "LeftLowerLeg"}, {"RightUpperLeg", "RightLowerLeg"},
+            {"LeftLowerLeg", "LeftFoot"}, {"RightLowerLeg", "RightFoot"}
+        }
+
+        for _, bone in pairs(Skeleton_Bones) do
+            local line = Drawing.new("Line")
+            line.Color = SKELETON_COLOR
+            line.Thickness = 2
+            line.Transparency = 1
+            table.insert(Skeleton_Lines, {Part1 = bone[1], Part2 = bone[2], Line = line})
+        end
+
+        -- Function to update ESP
+        local function UpdateESP()
+            if not Character or not Character.Parent then return end
+
+            local screenPosition, onScreen = Camera:WorldToViewportPoint(HumanoidRootPart.Position)
+            local distance = (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")) and 
+                              (LocalPlayer.Character.HumanoidRootPart.Position - HumanoidRootPart.Position).Magnitude or 0
+
+            if onScreen and ESP_ENABLED then
+                -- Box ESP
+                local size = Vector2.new(2500 / screenPosition.Z, 4000 / screenPosition.Z)
+                local position = Vector2.new(screenPosition.X - size.X / 2, screenPosition.Y - size.Y / 2)
+
+                ESP_Box.Size = size
+                ESP_Box.Position = position
+                ESP_Box.Visible = true
+
+                -- Health Bar
+                local healthPercent = Humanoid.Health / Humanoid.MaxHealth
+                local healthHeight = size.Y * healthPercent
+                Health_Bar.From = Vector2.new(position.X - 5, position.Y + size.Y)
+                Health_Bar.To = Vector2.new(position.X - 5, position.Y + size.Y - healthHeight)
+                Health_Bar.Visible = true
+
+                -- Name ESP
+                Name_Text.Position = Vector2.new(position.X + size.X / 2, position.Y - 15)
+                Name_Text.Visible = true
+
+                -- Distance ESP
+                Distance_Text.Text = string.format("%.1f Studs", distance)
+                Distance_Text.Position = Vector2.new(position.X + size.X / 2, position.Y + size.Y + 5)
+                Distance_Text.Visible = true
+
+                -- Skeleton ESP
+                for _, bone in pairs(Skeleton_Lines) do
+                    local part1 = Character:FindFirstChild(bone.Part1)
+                    local part2 = Character:FindFirstChild(bone.Part2)
+
+                    if part1 and part2 then
+                        local pos1, onScreen1 = Camera:WorldToViewportPoint(part1.Position)
+                        local pos2, onScreen2 = Camera:WorldToViewportPoint(part2.Position)
+
+                        if onScreen1 and onScreen2 then
+                            bone.Line.From = Vector2.new(pos1.X, pos1.Y)
+                            bone.Line.To = Vector2.new(pos2.X, pos2.Y)
+                            bone.Line.Visible = true
+                        else
+                            bone.Line.Visible = false
+                        end
+                    end
+                end
+            else
+                -- Hide ESP if not on screen
+                ESP_Box.Visible = false
+                Health_Bar.Visible = false
+                Name_Text.Visible = false
+                Distance_Text.Visible = false
+                for _, bone in pairs(Skeleton_Lines) do
+                    bone.Line.Visible = false
+                end
+            end
+        end
+
+        -- Connect to RenderStepped
+        local connection = RunService.RenderStepped:Connect(UpdateESP)
+
+        -- Store ESP objects
+        ESP_Objects[Player] = {
+            Box = ESP_Box,
+            HealthBar = Health_Bar,
+            Name = Name_Text,
+            Distance = Distance_Text,
+            Skeleton = Skeleton_Lines,
+            Connection = connection
+        }
+    end
+
+    -- Setup for existing or newly added characters
+    if Player.Character then
+        SetupCharacter(Player.Character)
+    end
+
+    Player.CharacterAdded:Connect(SetupCharacter)
+end
+
+-- Apply ESP to All Players
+for _, Player in pairs(Players:GetPlayers()) do
+    CreateESP(Player)
+end
+
+Players.PlayerAdded:Connect(CreateESP)
+Players.PlayerRemoving:Connect(RemoveESP)
+
+print("[ESP]: Script Loaded. Features - Name, Distance, Skeleton, Box, Health Bar.")
+
+then wait("1")
+
+--[[ 
+    Smooth Auto-Lock Aimbot (Subtle Adjustments)
+    - Toggles with "F"
+    - Locks onto the closest enemy
+    - Predicts movement & adjusts aim
+    - Subtle up movement every 10 studs
+    - Moves left/right every 20 studs
+]]
+
+--// Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+--// Settings
+local AimbotEnabled = false -- Default is OFF
+local AimKey = Enum.KeyCode.F -- Toggle key
+local TargetPart = "Head" -- Aims at the enemy's head
+local AimSmoothness = 1 -- Lower = Faster Lock, Higher = More Legit 
+local BasePredictionFactor = 0.12 -- Prediction at 100 studs
+local PredictionIncrement = 0.08 -- Additional prediction per 100 studs
+local VerticalAimIncrement = 0.017 -- Tiny vertical change per 10 studs 
+local HorizontalAimIncrement = 0.003 -- Moderate left/right change per 20 studs 
+local LockedTarget = nil -- Stores the locked enemy
+
+--// Toggle Aimbot with "F"
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == AimKey then
+        AimbotEnabled = not AimbotEnabled
+        LockedTarget = nil
+        print("[Aimbot]: " .. (AimbotEnabled and "Enabled" or "Disabled"))
+    end
+end)
+
+--// Function to Get Closest Target to Crosshair
+local function GetClosestToCrosshair()
+    local closestTarget = nil
+    local shortestDistance = math.huge
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local character = player.Character
+            local head = character:FindFirstChild(TargetPart)
+            local humanoid = character:FindFirstChild("Humanoid")
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+
+            if head and humanoid and humanoid.Health > 0 and rootPart then
+                local screenPosition, onScreen = Camera:WorldToViewportPoint(head.Position)
+                local mousePosition = Vector2.new(Mouse.X, Mouse.Y)
+                local targetPosition = Vector2.new(screenPosition.X, screenPosition.Y)
+                local distance = (mousePosition - targetPosition).Magnitude
+
+                if onScreen and distance < shortestDistance then
+                    closestTarget = head
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+
+    return closestTarget
+end
+
+--// Smooth Aimbot Tracking with Dynamic Offsets
+RunService.RenderStepped:Connect(function()
+    if AimbotEnabled and LockedTarget and LockedTarget.Parent then
+        local targetCharacter = LockedTarget.Parent
+        local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+        local targetHumanoid = targetCharacter:FindFirstChild("Humanoid")
+
+        if targetRoot and targetHumanoid and targetHumanoid.Health > 0 then
+            local distanceToTarget = (Camera.CFrame.Position - LockedTarget.Position).Magnitude
+            
+            -- Dynamic Prediction
+            local predictionFactor = BasePredictionFactor + ((distanceToTarget // 100) * PredictionIncrement)
+            local targetVelocity = targetRoot.Velocity * predictionFactor
+            local predictedPosition = LockedTarget.Position + targetVelocity
+
+            -- Subtle Aim Adjustments
+            local verticalOffset = (distanceToTarget // 15) * VerticalAimIncrement
+            local horizontalOffset = (distanceToTarget // 25) * HorizontalAimIncrement * (math.random(0, 1) == 0 and -1 or 1) -- Moves left or right every 20 studs
+
+            predictedPosition = predictedPosition + Vector3.new(horizontalOffset, verticalOffset, 0)
+
+            -- Smooth Camera Movement
+            local direction = (predictedPosition - Camera.CFrame.Position).unit
+            local newCFrame = CFrame.lookAt(Camera.CFrame.Position, Camera.CFrame.Position + direction)
+            Camera.CFrame = Camera.CFrame:Lerp(newCFrame, AimSmoothness)
+        else
+            LockedTarget = nil -- Reset target if it dies
+        end
+    elseif AimbotEnabled and (not LockedTarget or not LockedTarget.Parent) then
+        -- If target is gone, lock onto another enemy
+        LockedTarget = GetClosestToCrosshair()
+    end
+end)
+
+print("[Aimbot]: Loaded. Press 'F' to toggle Smooth Auto-Lock with Vertical & Horizontal Adjustments.")
